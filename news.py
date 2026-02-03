@@ -128,21 +128,21 @@ Respond in plain text.
         # ---- HARD SAFETY CHECK ----
         if "choices" not in data:
             return (
-                "⚠️ Groq API did not return a valid completion.\n\n"
+                "Groq API did not return a valid completion.\n\n"
                 f"Response:\n{data}"
             )
 
         return data["choices"][0]["message"]["content"]
 
     except Exception as e:
-        return f"⚠️ Groq API call failed: {str(e)}"
+        return f"Groq API call failed: {str(e)}"
 
 
 
 # ---------------- STREAMLIT UI ----------------
 st.set_page_config(page_title="News vs Stock Analyzer", layout="wide")
 
-st.title("📈 News vs Stock Price Analyzer")
+st.title("News vs Stock Price Analyzer")
 st.caption("Adaptive crawling • Free stack • Real-world safe")
 
 ticker = st.text_input(
@@ -159,25 +159,25 @@ if st.button("Analyze") and ticker:
         price = get_stock_price(ticker)
 
     if not price:
-        st.error("❌ Could not fetch stock price. Check ticker.")
+        st.error("Could not fetch stock price. Check ticker.")
         st.stop()
 
-    st.success(f"💰 Current Price: {price}")
+    st.success(f"Current Price: {price}")
 
     # ---- SEARCH ----
     with st.spinner("Searching news sources..."):
         links = search_news(ticker)
 
     if not links:
-        st.error("❌ No news links found.")
+        st.error("No news links found.")
         st.stop()
 
-    st.subheader("📰 Discovered News Links")
+    st.subheader("Discovered News Links")
     for l in links[:10]:
         st.markdown(f"- {l}")
 
     # ---- ADAPTIVE CRAWLING ----
-    st.subheader("📄 Crawled Articles")
+    st.subheader("Crawled Articles")
 
     successful_articles = []
     attempted = 0
@@ -194,31 +194,31 @@ if st.button("Analyze") and ticker:
             successful_articles.append(text)
             st.success(f"Source {attempted}: extracted ✔")
         else:
-            st.warning(f"Source {attempted}: blocked / failed ❌")
+            st.warning(f"Source {attempted}: blocked / failed ")
 
         time.sleep(0.8)
 
     if not successful_articles:
-        st.error("❌ Could not extract content from any source.")
+        st.error("Could not extract content from any source.")
         st.stop()
 
     combined_text = "\n\n".join(successful_articles)
 
     # ---- LLM ----
     if not GROQ_API_KEY:
-        st.error("❌ GROQ_API_KEY not set.")
+        st.error("GROQ_API_KEY not set.")
         st.stop()
 
-    st.subheader("🧠 AI Evaluation")
+    st.subheader("AI Evaluation")
     with st.spinner("Analyzing news vs price..."):
         result = analyze_with_groq(combined_text, price, ticker)
 
-    st.markdown("### 🧠 AI Evaluation")
+    st.markdown("### AI Evaluation")
     st.markdown(result)
 
 
 # ---------------- TOP STOCKS DASHBOARD ----------------
-st.subheader("📊 Market Snapshot: Top Stocks")
+st.subheader("Market Snapshot: Top Stocks")
 
 TOP_STOCKS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "NFLX", "AMD", "INTC"]
 
@@ -235,24 +235,24 @@ stock_data = load_stock_history(TOP_STOCKS)
 
 c1, c2 = st.columns(2)
 
-# 1️⃣ Line chart – Price trends
+# Line chart – Price trends
 with c1:
     st.markdown("**1. Price Trends (6 months)**")
     st.line_chart({k: v["Close"] for k, v in stock_data.items()})
 
-# 2️⃣ Area chart – Volume
+# Area chart – Volume
 with c2:
     st.markdown("**2. Trading Volume (6 months)**")
     st.area_chart({k: v["Volume"] for k, v in stock_data.items()})
 
-# 3️⃣ Bar chart – Latest Close
+# Bar chart – Latest Close
 st.markdown("**3. Latest Closing Prices**")
 latest_prices = {
     k: float(v["Close"].iloc[-1]) for k, v in stock_data.items()
 }
 st.bar_chart(latest_prices)
 
-# 4️⃣ Bar chart – % Change (7d)
+# Bar chart – % Change (7d)
 st.markdown("**4. 7-Day % Change**")
 pct_change = {
     k: round(((v["Close"].iloc[-1] / v["Close"].iloc[-7]) - 1) * 100, 2)
@@ -260,7 +260,7 @@ pct_change = {
 }
 st.bar_chart(pct_change)
 
-# 5️⃣ Line chart – AAPL vs MSFT
+# Line chart – AAPL vs MSFT
 st.markdown("**5. AAPL vs MSFT Price Comparison**")
 compare_df = {
     "AAPL": stock_data["AAPL"]["Close"],
@@ -268,26 +268,26 @@ compare_df = {
 }
 st.line_chart(compare_df)
 
-# 6️⃣ Area chart – NVDA momentum
+# Area chart – NVDA momentum
 st.markdown("**6. NVDA Momentum (Close Price)**")
 st.area_chart(stock_data["NVDA"]["Close"])
 
-# 7️⃣ Line chart – TSLA volatility
+# Line chart – TSLA volatility
 st.markdown("**7. TSLA Volatility**")
 st.line_chart(stock_data["TSLA"]["High"] - stock_data["TSLA"]["Low"])
 
-# 8️⃣ Bar chart – Average Volume
+# Bar chart – Average Volume
 st.markdown("**8. Average Daily Volume**")
 avg_volume = {
     k: int(v["Volume"].mean()) for k, v in stock_data.items()
 }
 st.bar_chart(avg_volume)
 
-# 9️⃣ Line chart – META growth
+# Line chart – META growth
 st.markdown("**9. META Growth Curve**")
 st.line_chart(stock_data["META"]["Close"])
 
-# 🔟 Line chart – Semiconductor stocks
+# Line chart – Semiconductor stocks
 st.markdown("**10. Semiconductor Performance (AMD vs INTC)**")
 semi_df = {
     "AMD": stock_data["AMD"]["Close"],
@@ -295,3 +295,4 @@ semi_df = {
 }
 
 st.line_chart(semi_df)
+
