@@ -8,7 +8,7 @@ import time
 from urllib.parse import urlparse
 
 # ---------------- CONFIG ----------------
-#GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 
 GROQ_MODEL = "openai/gpt-oss-120b"
@@ -293,4 +293,5 @@ semi_df = {
     "AMD": stock_data["AMD"]["Close"],
     "INTC": stock_data["INTC"]["Close"]
 }
+
 st.line_chart(semi_df)
