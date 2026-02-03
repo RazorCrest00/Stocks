@@ -1,0 +1,6 @@
+streamlit
+yfinance
+requests
+trafilatura
+ddgs
+lxml_html_clean
