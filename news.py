@@ -61,7 +61,6 @@ def crawl_article(url):
             return text.strip()
 
         return None
-
     except Exception:
         return None
 
@@ -92,7 +91,6 @@ Tasks:
 
 Respond in plain text.
 """
-
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -111,7 +109,6 @@ Respond in plain text.
             json=payload,
             timeout=30
         )
-
         data = response.json()
 
         if "choices" not in data:
@@ -121,7 +118,6 @@ Respond in plain text.
             )
 
         return data["choices"][0]["message"]["content"]
-
     except Exception as e:
         return f"Groq API call failed: {str(e)}"
 
@@ -134,28 +130,26 @@ def chat_with_groq(ticker, price, evaluation_text, chat_history, user_message):
     system_prompt = f"""
 You are a stock research assistant inside a Streamlit app.
 
-You MUST use the provided evaluation context as your primary reference.
-You may discuss possible bullish/bearish scenarios and what would need to happen for price to rise/fall.
-You MUST NOT claim certainty or guarantee future price movements.
-If asked "will it go up", respond with a probability-style, scenario-based answer and key risks.
+Use the provided evaluation context as your primary reference.
+Discuss plausible bullish/bearish scenarios and what would need to happen for price to rise/fall.
+Do not claim certainty or guarantee future price movements.
+If asked "will it go up", respond with a scenario-based answer and key risks.
 
 Stock: {ticker}
 Current Price: {price}
 
-Evaluation Context (from earlier LLM analysis):
+Evaluation Context:
 {eval_context}
 
 Answer format rules:
 - Be concise.
-- Use plain text.
-- If you reference "up/down", clarify it is a hypothesis, not a guarantee.
+- Plain text.
+- If you reference up/down, clarify it is a hypothesis, not a guarantee.
 """
 
     messages = [{"role": "system", "content": system_prompt}]
-
     if chat_history:
         messages.extend(chat_history[-20:])
-
     messages.append({"role": "user", "content": user_message})
 
     headers = {
@@ -182,14 +176,87 @@ Answer format rules:
             return f"Groq API did not return a valid completion.\n\nResponse:\n{data}"
 
         return data["choices"][0]["message"]["content"]
-
     except Exception as e:
         return f"Groq API call failed: {str(e)}"
 
 st.set_page_config(page_title="News vs Stock Analyzer", layout="wide")
 
-st.title("News vs Stock Price Analyzer")
-st.caption("Adaptive crawling • Free stack • Real-world safe")
+st.markdown(
+    """
+<style>
+.chat-launcher {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 10000;
+}
+.chat-window {
+  position: fixed;
+  right: 22px;
+  bottom: 78px;
+  width: 360px;
+  max-width: calc(100vw - 44px);
+  height: 520px;
+  max-height: calc(100vh - 120px);
+  background: rgba(18, 18, 22, 0.92);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+  z-index: 10000;
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+.chat-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chat-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: rgba(255,255,255,0.92);
+}
+.chat-subtitle {
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  margin-top: 2px;
+}
+.chat-body {
+  padding: 10px 12px;
+  height: 392px;
+  overflow-y: auto;
+}
+.chat-footer {
+  padding: 10px 12px 12px 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+div[data-testid="stChatMessage"] {
+  margin: 0 0 10px 0;
+}
+div[data-testid="stChatMessage"] p {
+  line-height: 1.25rem;
+  font-size: 0.95rem;
+}
+.chat-note {
+  font-size: 11px;
+  color: rgba(255,255,255,0.52);
+  margin-top: 8px;
+}
+button[kind="primary"] {
+  border-radius: 999px !important;
+}
+</style>
+""",
+    unsafe_allow_html=True
+)
+
+if "view" not in st.session_state:
+    st.session_state.view = "home"
+
+if "chat_open" not in st.session_state:
+    st.session_state.chat_open = False
 
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
@@ -203,110 +270,89 @@ if "last_ticker" not in st.session_state:
 if "last_price" not in st.session_state:
     st.session_state.last_price = None
 
+st.title("News vs Stock Price Analyzer")
+st.caption("Adaptive crawling • Free stack • Real-world safe")
+
 ticker = st.text_input(
     "Enter Stock Ticker (e.g. AAPL, TSLA, INFY)",
     placeholder="AAPL"
 )
 
-if st.button("Analyze") and ticker:
-    ticker = ticker.strip().upper()
+analyze_clicked = st.button("Analyze")
 
-    with st.spinner("Fetching live stock price..."):
-        price = get_stock_price(ticker)
+if analyze_clicked:
+    if not ticker or not ticker.strip():
+        st.session_state.view = "home"
+        st.session_state.chat_open = False
+    else:
+        ticker = ticker.strip().upper()
+        st.session_state.view = "analysis"
 
-    if not price:
-        st.error("Could not fetch stock price. Check ticker.")
-        st.stop()
+        with st.spinner("Fetching live stock price..."):
+            price = get_stock_price(ticker)
 
-    st.success(f"Current Price: {price}")
+        if not price:
+            st.error("Could not fetch stock price. Check ticker.")
+            st.stop()
 
-    with st.spinner("Searching news sources..."):
-        links = search_news(ticker)
+        st.success(f"Current Price: {price}")
 
-    if not links:
-        st.error("No news links found.")
-        st.stop()
+        with st.spinner("Searching news sources..."):
+            links = search_news(ticker)
 
-    st.subheader("Discovered News Links")
-    for l in links[:10]:
-        st.markdown(f"- {l}")
+        if not links:
+            st.error("No news links found.")
+            st.stop()
 
-    st.subheader("Crawled Articles")
+        st.subheader("Discovered News Links")
+        for l in links[:10]:
+            st.markdown(f"- {l}")
 
-    successful_articles = []
-    attempted = 0
+        st.subheader("Crawled Articles")
 
-    for link in links:
-        if len(successful_articles) >= 5:
-            break
+        successful_articles = []
+        attempted = 0
 
-        attempted += 1
-        with st.spinner(f"Trying source {attempted}..."):
-            text = crawl_article(link)
+        for link in links:
+            if len(successful_articles) >= 5:
+                break
 
-        if text:
-            successful_articles.append(text)
-            st.success(f"Source {attempted}: extracted ✔")
-        else:
-            st.warning(f"Source {attempted}: blocked / failed ")
+            attempted += 1
+            with st.spinner(f"Trying source {attempted}..."):
+                text = crawl_article(link)
 
-        time.sleep(0.8)
+            if text:
+                successful_articles.append(text)
+                st.success(f"Source {attempted}: extracted ✔")
+            else:
+                st.warning(f"Source {attempted}: blocked / failed ")
 
-    if not successful_articles:
-        st.error("Could not extract content from any source.")
-        st.stop()
+            time.sleep(0.8)
 
-    combined_text = "\n\n".join(successful_articles)
+        if not successful_articles:
+            st.error("Could not extract content from any source.")
+            st.stop()
 
-    if not GROQ_API_KEY:
-        st.error("GROQ_API_KEY not set.")
-        st.stop()
+        combined_text = "\n\n".join(successful_articles)
 
-    st.subheader("AI Evaluation")
-    with st.spinner("Analyzing news vs price..."):
-        result = analyze_with_groq(combined_text, price, ticker)
+        if not GROQ_API_KEY:
+            st.error("GROQ_API_KEY not set.")
+            st.stop()
 
-    if st.session_state.last_ticker and st.session_state.last_ticker != ticker:
-        st.session_state.chat_messages = []
+        st.subheader("AI Evaluation")
+        with st.spinner("Analyzing news vs price..."):
+            result = analyze_with_groq(combined_text, price, ticker)
 
-    st.session_state.last_evaluation = result
-    st.session_state.last_ticker = ticker
-    st.session_state.last_price = price
+        if st.session_state.last_ticker and st.session_state.last_ticker != ticker:
+            st.session_state.chat_messages = []
+            st.session_state.chat_open = False
 
-    st.markdown(result)
-    st.divider()
+        st.session_state.last_evaluation = result
+        st.session_state.last_ticker = ticker
+        st.session_state.last_price = price
 
-st.subheader("Chat about this stock (context-aware)")
-
-if not st.session_state.last_evaluation:
-    st.info("Run Analyze first so the chatbot has context from the Groq evaluation.")
-else:
-    for m in st.session_state.chat_messages:
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-
-    user_msg = st.chat_input("Ask a question about the stock (e.g., 'Bullish or bearish?' or 'What would make it go up?')")
-
-    if user_msg:
-        with st.chat_message("user"):
-            st.markdown(user_msg)
-
-        history_for_model = st.session_state.chat_messages[-20:]
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                assistant_reply = chat_with_groq(
-                    ticker=st.session_state.last_ticker,
-                    price=st.session_state.last_price,
-                    evaluation_text=st.session_state.last_evaluation,
-                    chat_history=history_for_model,
-                    user_message=user_msg
-                )
-                st.markdown(assistant_reply)
-
-        st.session_state.chat_messages.append({"role": "user", "content": user_msg})
-        st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
-
-    st.caption("Not financial advice. This is an automated analysis based on recent scraped news and may be incomplete or wrong.")
+        st.markdown(result)
+        st.divider()
 
 st.subheader("Market Snapshot: Top Stocks")
 
@@ -370,3 +416,57 @@ semi_df = {
     "INTC": stock_data["INTC"]["Close"]
 }
 st.line_chart(semi_df)
+
+show_chat = (st.session_state.view == "analysis") and bool(st.session_state.last_evaluation) and bool(st.session_state.last_ticker)
+
+if show_chat:
+    st.markdown('<div class="chat-launcher">', unsafe_allow_html=True)
+    label = "Close" if st.session_state.chat_open else "Chat"
+    if st.button(f"💬 {label}", type="primary", key="chat_toggle_btn"):
+        st.session_state.chat_open = not st.session_state.chat_open
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if st.session_state.chat_open:
+        st.markdown('<div class="chat-window">', unsafe_allow_html=True)
+
+        st.markdown(
+            f"""
+<div class="chat-header">
+  <div>
+    <div class="chat-title">Stock Chat</div>
+    <div class="chat-subtitle">{st.session_state.last_ticker} • {st.session_state.last_price}</div>
+  </div>
+</div>
+""",
+            unsafe_allow_html=True
+        )
+
+        st.markdown('<div class="chat-body">', unsafe_allow_html=True)
+        for m in st.session_state.chat_messages[-40:]:
+            with st.chat_message(m["role"]):
+                st.markdown(m["content"])
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown('<div class="chat-footer">', unsafe_allow_html=True)
+        user_msg = st.chat_input("Ask about the stock using the evaluation context...")
+        st.markdown('<div class="chat-note">Not financial advice.</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if user_msg:
+            history_for_model = st.session_state.chat_messages[-20:]
+
+            assistant_reply = chat_with_groq(
+                ticker=st.session_state.last_ticker,
+                price=st.session_state.last_price,
+                evaluation_text=st.session_state.last_evaluation,
+                chat_history=history_for_model,
+                user_message=user_msg
+            )
+
+            st.session_state.chat_messages.append({"role": "user", "content": user_msg})
+            st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
+            st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+else:
+    st.session_state.chat_open = False
