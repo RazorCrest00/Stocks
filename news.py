@@ -195,45 +195,63 @@ st.set_page_config(page_title="News vs Stock Analyzer", layout="wide")
 st.markdown(
     """
 <style>
-.chat-mini {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 10000;
-  width: 280px;
+/* Float the entire Streamlit container that contains our marker */
+div:has(> div > div > div > #float_chat_collapsed),
+div:has(> div > div > div > #float_chat_expanded){
+  position: fixed !important;
+  right: 18px !important;
+  bottom: 18px !important;
+  z-index: 10000 !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
-.chat-panel {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 10000;
-  width: 360px;
-  max-width: calc(100vw - 36px);
-  height: 520px;
-  max-height: calc(100vh - 36px);
-  background: rgba(18, 18, 22, 0.92);
+
+/* Collapsed size */
+div:has(> div > div > div > #float_chat_collapsed){
+  width: 260px !important;
+}
+
+/* Expanded size */
+div:has(> div > div > div > #float_chat_expanded){
+  width: 360px !important;
+  max-width: calc(100vw - 36px) !important;
+}
+
+/* Panel styling */
+.float-chat-shell{
+  background: rgba(18,18,22,0.92);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 18px;
   box-shadow: 0 18px 60px rgba(0,0,0,0.55);
   overflow: hidden;
   backdrop-filter: blur(10px);
 }
-.chat-topbar {
+
+/* Collapsed bar */
+.float-chat-mini{
   height: 54px;
-  background: linear-gradient(90deg, rgba(109,40,217,0.95), rgba(88,28,135,0.95));
-  padding: 10px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-.chat-topbar-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(90deg, rgba(109,40,217,0.95), rgba(88,28,135,0.95));
   color: rgba(255,255,255,0.95);
-  font-weight: 700;
 }
-.chat-badge {
+.float-chat-mini .title{
+  font-weight: 800;
+  font-size: 13px;
+}
+.float-chat-mini .sub{
+  font-size: 11px;
+  opacity: 0.9;
+  margin-top: 2px;
+}
+.float-chat-mini .left{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.badge{
   width: 30px;
   height: 30px;
   border-radius: 10px;
@@ -242,19 +260,43 @@ st.markdown(
   place-items: center;
   font-size: 16px;
 }
-.chat-sub {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.85);
+
+/* Expanded top bar */
+.float-chat-top{
+  height: 54px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, rgba(109,40,217,0.95), rgba(88,28,135,0.95));
+  color: rgba(255,255,255,0.95);
+}
+.float-chat-top .left{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.float-chat-top .meta .title{
+  font-weight: 800;
+  font-size: 13px;
+}
+.float-chat-top .meta .sub{
+  font-size: 11px;
+  opacity: 0.9;
   margin-top: 2px;
 }
-.chat-body {
-  height: 394px;
-  padding: 12px 12px 8px 12px;
+
+/* Messages area */
+.float-chat-body{
+  height: 380px;
+  max-height: calc(100vh - 170px);
   overflow-y: auto;
+  padding: 12px 12px 8px 12px;
   background: rgba(255,255,255,0.03);
 }
-.bubble {
+
+/* Bubbles */
+.bubble{
   max-width: 86%;
   padding: 10px 12px;
   border-radius: 16px;
@@ -263,53 +305,36 @@ st.markdown(
   line-height: 1.25rem;
   border: 1px solid rgba(255,255,255,0.10);
 }
-.bubble.user {
+.bubble.user{
   margin-left: auto;
   background: rgba(109,40,217,0.22);
   border-top-right-radius: 8px;
 }
-.bubble.bot {
+.bubble.bot{
   margin-right: auto;
   background: rgba(255,255,255,0.08);
   border-top-left-radius: 8px;
 }
-.chat-input-wrap {
+
+/* Input row */
+.float-chat-input{
   padding: 10px 12px 12px 12px;
   border-top: 1px solid rgba(255,255,255,0.08);
   background: rgba(18,18,22,0.92);
 }
-.chat-note {
-  font-size: 11px;
-  color: rgba(255,255,255,0.55);
-  margin-top: 6px;
+
+/* Make Streamlit widgets inside the floating box not stretch awkwardly */
+div:has(> div > div > div > #float_chat_collapsed) .stButton,
+div:has(> div > div > div > #float_chat_expanded) .stButton{
+  margin: 0 !important;
 }
-.chat-mini-card {
-  background: linear-gradient(90deg, rgba(109,40,217,0.95), rgba(88,28,135,0.95));
-  border-radius: 14px;
-  padding: 10px 12px;
-  color: rgba(255,255,255,0.95);
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 14px 40px rgba(0,0,0,0.45);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.chat-mini-title {
-  font-weight: 800;
-  font-size: 13px;
-}
-.chat-mini-sub {
-  font-size: 11px;
-  opacity: 0.9;
-  margin-top: 2px;
-}
-button[kind="primary"] {
+div:has(> div > div > div > #float_chat_collapsed) button,
+div:has(> div > div > div > #float_chat_expanded) button{
   border-radius: 999px !important;
 }
-div[data-testid="stButton"] > button {
-  padding-top: 0.45rem !important;
-  padding-bottom: 0.45rem !important;
-}
+
+/* Hide markers */
+#float_chat_collapsed, #float_chat_expanded { display: none; }
 </style>
 """,
     unsafe_allow_html=True
@@ -317,22 +342,16 @@ div[data-testid="stButton"] > button {
 
 if "view" not in st.session_state:
     st.session_state.view = "home"
-
 if "chat_open" not in st.session_state:
     st.session_state.chat_open = False
-
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
-
 if "last_evaluation" not in st.session_state:
     st.session_state.last_evaluation = ""
-
 if "last_ticker" not in st.session_state:
     st.session_state.last_ticker = ""
-
 if "last_price" not in st.session_state:
     st.session_state.last_price = None
-
 if "chat_draft" not in st.session_state:
     st.session_state.chat_draft = ""
 
@@ -486,85 +505,84 @@ st.line_chart(semi_df)
 show_chat = (st.session_state.view == "analysis") and bool(st.session_state.last_evaluation) and bool(st.session_state.last_ticker)
 
 if show_chat:
-    if not st.session_state.chat_open:
-        st.markdown('<div class="chat-mini">', unsafe_allow_html=True)
-        left, right = st.columns([4, 1])
-        with left:
+    chat_box = st.container()
+    with chat_box:
+        if st.session_state.chat_open:
+            st.markdown('<div id="float_chat_expanded"></div>', unsafe_allow_html=True)
             st.markdown(
                 f"""
-<div class="chat-mini-card">
-  <div>
-    <div class="chat-mini-title">Assistant</div>
-    <div class="chat-mini-sub">{st.session_state.last_ticker} • {st.session_state.last_price}</div>
-  </div>
-</div>
-""",
-                unsafe_allow_html=True
-            )
-        with right:
-            if st.button("💬", type="primary", key="open_chat_btn"):
-                st.session_state.chat_open = True
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    if st.session_state.chat_open:
-        st.markdown('<div class="chat-panel">', unsafe_allow_html=True)
-
-        top_left, top_right = st.columns([5, 1])
-        with top_left:
-            st.markdown(
-                f"""
-<div class="chat-topbar">
-  <div class="chat-topbar-left">
-    <div class="chat-badge">🤖</div>
-    <div>
-      <div>Assistant</div>
-      <div class="chat-sub">{st.session_state.last_ticker} • {st.session_state.last_price}</div>
+<div class="float-chat-shell">
+  <div class="float-chat-top">
+    <div class="left">
+      <div class="badge">🤖</div>
+      <div class="meta">
+        <div class="title">Assistant</div>
+        <div class="sub">{st.session_state.last_ticker} • {st.session_state.last_price}</div>
+      </div>
     </div>
   </div>
 </div>
 """,
                 unsafe_allow_html=True
             )
-        with top_right:
-            if st.button("–", type="primary", key="min_chat_btn"):
-                st.session_state.chat_open = False
+
+            bubbles_html = _render_bubbles(st.session_state.chat_messages[-60:])
+            st.markdown(f'<div class="float-chat-body">{bubbles_html}</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="float-chat-input">', unsafe_allow_html=True)
+            in_col, send_col, min_col = st.columns([6, 2, 1])
+            with in_col:
+                msg = st.text_input(
+                    "",
+                    value=st.session_state.chat_draft,
+                    placeholder="Type a message…",
+                    key="chat_text_input"
+                )
+                st.session_state.chat_draft = msg
+            with send_col:
+                send = st.button("Send", type="primary", key="chat_send_btn")
+            with min_col:
+                if st.button("–", type="primary", key="chat_min_btn"):
+                    st.session_state.chat_open = False
+                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            if send and st.session_state.chat_draft.strip():
+                user_msg = st.session_state.chat_draft.strip()
+                st.session_state.chat_draft = ""
+                st.session_state.chat_messages.append({"role": "user", "content": user_msg})
+
+                history_for_model = st.session_state.chat_messages[-20:]
+                assistant_reply = chat_with_groq(
+                    ticker=st.session_state.last_ticker,
+                    price=st.session_state.last_price,
+                    evaluation_text=st.session_state.last_evaluation,
+                    chat_history=history_for_model,
+                    user_message=user_msg
+                )
+                st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
                 st.rerun()
 
-        bubbles_html = _render_bubbles(st.session_state.chat_messages[-50:])
-        st.markdown(f'<div class="chat-body">{bubbles_html}</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="chat-input-wrap">', unsafe_allow_html=True)
-        c_in, c_send = st.columns([5, 1])
-        with c_in:
-            st.session_state.chat_draft = st.text_input(
-                "",
-                value=st.session_state.chat_draft,
-                placeholder="Type a message…",
-                key="chat_text_input"
+        else:
+            st.markdown('<div id="float_chat_collapsed"></div>', unsafe_allow_html=True)
+            st.markdown(
+                f"""
+<div class="float-chat-shell">
+  <div class="float-chat-mini">
+    <div class="left">
+      <div class="badge">🤖</div>
+      <div>
+        <div class="title">Assistant</div>
+        <div class="sub">{st.session_state.last_ticker} • {st.session_state.last_price}</div>
+      </div>
+    </div>
+  </div>
+</div>
+""",
+                unsafe_allow_html=True
             )
-        with c_send:
-            send = st.button("Send", type="primary", key="chat_send_btn")
-
-        st.markdown('<div class="chat-note">Not financial advice.</div>', unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        if send and st.session_state.chat_draft.strip():
-            user_msg = st.session_state.chat_draft.strip()
-            st.session_state.chat_draft = ""
-            st.session_state.chat_messages.append({"role": "user", "content": user_msg})
-
-            history_for_model = st.session_state.chat_messages[-20:]
-            assistant_reply = chat_with_groq(
-                ticker=st.session_state.last_ticker,
-                price=st.session_state.last_price,
-                evaluation_text=st.session_state.last_evaluation,
-                chat_history=history_for_model,
-                user_message=user_msg
-            )
-            st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
-            st.rerun()
-
-        st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("Open", type="primary", key="chat_open_btn"):
+                st.session_state.chat_open = True
+                st.rerun()
 else:
     st.session_state.chat_open = False
