@@ -6,6 +6,7 @@ from ddgs import DDGS
 import os
 import time
 from urllib.parse import urlparse
+import html as _html
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -179,73 +180,135 @@ Answer format rules:
     except Exception as e:
         return f"Groq API call failed: {str(e)}"
 
+def _render_bubbles(messages):
+    parts = []
+    for m in messages:
+        role = m.get("role", "assistant")
+        txt = _html.escape(m.get("content", ""))
+        txt = txt.replace("\n", "<br/>")
+        cls = "bubble user" if role == "user" else "bubble bot"
+        parts.append(f'<div class="{cls}">{txt}</div>')
+    return "\n".join(parts)
+
 st.set_page_config(page_title="News vs Stock Analyzer", layout="wide")
 
 st.markdown(
     """
 <style>
-.chat-launcher {
+.chat-mini {
   position: fixed;
-  right: 22px;
-  bottom: 22px;
+  right: 18px;
+  bottom: 18px;
   z-index: 10000;
+  width: 280px;
 }
-.chat-window {
+.chat-panel {
   position: fixed;
-  right: 22px;
-  bottom: 78px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10000;
   width: 360px;
-  max-width: calc(100vw - 44px);
+  max-width: calc(100vw - 36px);
   height: 520px;
-  max-height: calc(100vh - 120px);
+  max-height: calc(100vh - 36px);
   background: rgba(18, 18, 22, 0.92);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: 18px;
   box-shadow: 0 18px 60px rgba(0,0,0,0.55);
-  z-index: 10000;
   overflow: hidden;
   backdrop-filter: blur(10px);
 }
-.chat-header {
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+.chat-topbar {
+  height: 54px;
+  background: linear-gradient(90deg, rgba(109,40,217,0.95), rgba(88,28,135,0.95));
+  padding: 10px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-.chat-title {
+.chat-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255,255,255,0.95);
   font-weight: 700;
-  font-size: 14px;
-  color: rgba(255,255,255,0.92);
 }
-.chat-subtitle {
+.chat-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.16);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+}
+.chat-sub {
   font-size: 12px;
-  color: rgba(255,255,255,0.62);
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
   margin-top: 2px;
 }
 .chat-body {
-  padding: 10px 12px;
-  height: 392px;
+  height: 394px;
+  padding: 12px 12px 8px 12px;
   overflow-y: auto;
+  background: rgba(255,255,255,0.03);
 }
-.chat-footer {
+.bubble {
+  max-width: 86%;
+  padding: 10px 12px;
+  border-radius: 16px;
+  margin: 8px 0;
+  font-size: 14px;
+  line-height: 1.25rem;
+  border: 1px solid rgba(255,255,255,0.10);
+}
+.bubble.user {
+  margin-left: auto;
+  background: rgba(109,40,217,0.22);
+  border-top-right-radius: 8px;
+}
+.bubble.bot {
+  margin-right: auto;
+  background: rgba(255,255,255,0.08);
+  border-top-left-radius: 8px;
+}
+.chat-input-wrap {
   padding: 10px 12px 12px 12px;
   border-top: 1px solid rgba(255,255,255,0.08);
-}
-div[data-testid="stChatMessage"] {
-  margin: 0 0 10px 0;
-}
-div[data-testid="stChatMessage"] p {
-  line-height: 1.25rem;
-  font-size: 0.95rem;
+  background: rgba(18,18,22,0.92);
 }
 .chat-note {
   font-size: 11px;
-  color: rgba(255,255,255,0.52);
-  margin-top: 8px;
+  color: rgba(255,255,255,0.55);
+  margin-top: 6px;
+}
+.chat-mini-card {
+  background: linear-gradient(90deg, rgba(109,40,217,0.95), rgba(88,28,135,0.95));
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: rgba(255,255,255,0.95);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chat-mini-title {
+  font-weight: 800;
+  font-size: 13px;
+}
+.chat-mini-sub {
+  font-size: 11px;
+  opacity: 0.9;
+  margin-top: 2px;
 }
 button[kind="primary"] {
   border-radius: 999px !important;
+}
+div[data-testid="stButton"] > button {
+  padding-top: 0.45rem !important;
+  padding-bottom: 0.45rem !important;
 }
 </style>
 """,
@@ -269,6 +332,9 @@ if "last_ticker" not in st.session_state:
 
 if "last_price" not in st.session_state:
     st.session_state.last_price = None
+
+if "chat_draft" not in st.session_state:
+    st.session_state.chat_draft = ""
 
 st.title("News vs Stock Price Analyzer")
 st.caption("Adaptive crawling • Free stack • Real-world safe")
@@ -420,41 +486,75 @@ st.line_chart(semi_df)
 show_chat = (st.session_state.view == "analysis") and bool(st.session_state.last_evaluation) and bool(st.session_state.last_ticker)
 
 if show_chat:
-    st.markdown('<div class="chat-launcher">', unsafe_allow_html=True)
-    label = "Close" if st.session_state.chat_open else "Chat"
-    if st.button(f"💬 {label}", type="primary", key="chat_toggle_btn"):
-        st.session_state.chat_open = not st.session_state.chat_open
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if st.session_state.chat_open:
-        st.markdown('<div class="chat-window">', unsafe_allow_html=True)
-
-        st.markdown(
-            f"""
-<div class="chat-header">
+    if not st.session_state.chat_open:
+        st.markdown('<div class="chat-mini">', unsafe_allow_html=True)
+        left, right = st.columns([4, 1])
+        with left:
+            st.markdown(
+                f"""
+<div class="chat-mini-card">
   <div>
-    <div class="chat-title">Stock Chat</div>
-    <div class="chat-subtitle">{st.session_state.last_ticker} • {st.session_state.last_price}</div>
+    <div class="chat-mini-title">Assistant</div>
+    <div class="chat-mini-sub">{st.session_state.last_ticker} • {st.session_state.last_price}</div>
   </div>
 </div>
 """,
-            unsafe_allow_html=True
-        )
-
-        st.markdown('<div class="chat-body">', unsafe_allow_html=True)
-        for m in st.session_state.chat_messages[-40:]:
-            with st.chat_message(m["role"]):
-                st.markdown(m["content"])
+                unsafe_allow_html=True
+            )
+        with right:
+            if st.button("💬", type="primary", key="open_chat_btn"):
+                st.session_state.chat_open = True
+                st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown('<div class="chat-footer">', unsafe_allow_html=True)
-        user_msg = st.chat_input("Ask about the stock using the evaluation context...")
+    if st.session_state.chat_open:
+        st.markdown('<div class="chat-panel">', unsafe_allow_html=True)
+
+        top_left, top_right = st.columns([5, 1])
+        with top_left:
+            st.markdown(
+                f"""
+<div class="chat-topbar">
+  <div class="chat-topbar-left">
+    <div class="chat-badge">🤖</div>
+    <div>
+      <div>Assistant</div>
+      <div class="chat-sub">{st.session_state.last_ticker} • {st.session_state.last_price}</div>
+    </div>
+  </div>
+</div>
+""",
+                unsafe_allow_html=True
+            )
+        with top_right:
+            if st.button("–", type="primary", key="min_chat_btn"):
+                st.session_state.chat_open = False
+                st.rerun()
+
+        bubbles_html = _render_bubbles(st.session_state.chat_messages[-50:])
+        st.markdown(f'<div class="chat-body">{bubbles_html}</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="chat-input-wrap">', unsafe_allow_html=True)
+        c_in, c_send = st.columns([5, 1])
+        with c_in:
+            st.session_state.chat_draft = st.text_input(
+                "",
+                value=st.session_state.chat_draft,
+                placeholder="Type a message…",
+                key="chat_text_input"
+            )
+        with c_send:
+            send = st.button("Send", type="primary", key="chat_send_btn")
+
         st.markdown('<div class="chat-note">Not financial advice.</div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-        if user_msg:
-            history_for_model = st.session_state.chat_messages[-20:]
+        if send and st.session_state.chat_draft.strip():
+            user_msg = st.session_state.chat_draft.strip()
+            st.session_state.chat_draft = ""
+            st.session_state.chat_messages.append({"role": "user", "content": user_msg})
 
+            history_for_model = st.session_state.chat_messages[-20:]
             assistant_reply = chat_with_groq(
                 ticker=st.session_state.last_ticker,
                 price=st.session_state.last_price,
@@ -462,8 +562,6 @@ if show_chat:
                 chat_history=history_for_model,
                 user_message=user_msg
             )
-
-            st.session_state.chat_messages.append({"role": "user", "content": user_msg})
             st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
             st.rerun()
 
