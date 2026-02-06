@@ -7,9 +7,7 @@ import os
 import time
 from urllib.parse import urlparse
 
-# ---------------- CONFIG ----------------
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
 
 GROQ_MODEL = "openai/gpt-oss-120b"
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
@@ -30,7 +28,6 @@ BLOCKED_DOMAINS = (
     "ft.com",
 )
 
-# ---------------- HELPERS ----------------
 def search_news(query, max_results=40):
     links = []
     with DDGS() as ddgs:
@@ -40,22 +37,16 @@ def search_news(query, max_results=40):
                 links.append(url)
     return links
 
-
 def is_blocked_domain(url):
     domain = urlparse(url).netloc.lower()
     return any(bad in domain for bad in BLOCKED_DOMAINS)
-
 
 def crawl_article(url):
     try:
         if is_blocked_domain(url):
             return None
 
-        resp = requests.get(
-            url,
-            headers=HEADERS,
-            timeout=20
-        )
+        resp = requests.get(url, headers=HEADERS, timeout=20)
 
         if resp.status_code != 200 or len(resp.text) < 2000:
             return None
@@ -74,7 +65,6 @@ def crawl_article(url):
     except Exception:
         return None
 
-
 def get_stock_price(ticker):
     try:
         stock = yf.Ticker(ticker)
@@ -84,7 +74,6 @@ def get_stock_price(ticker):
         return round(float(data["Close"].iloc[-1]), 2)
     except Exception:
         return None
-
 
 def analyze_with_groq(news_text, price, ticker):
     prompt = f"""
@@ -124,7 +113,7 @@ Respond in plain text.
         )
 
         data = response.json()
-        
+
         if "choices" not in data:
             return (
                 "Groq API did not return a valid completion.\n\n"
@@ -135,11 +124,8 @@ Respond in plain text.
 
     except Exception as e:
         return f"Groq API call failed: {str(e)}"
+
 def chat_with_groq(ticker, price, evaluation_text, chat_history, user_message):
-    """
-    Chatbot that uses the Groq evaluation as context + maintains conversation.
-    chat_history: list of dicts like [{"role":"user","content":"..."}, {"role":"assistant","content":"..."}]
-    """
     if not GROQ_API_KEY:
         return "GROQ_API_KEY not set."
 
@@ -200,16 +186,13 @@ Answer format rules:
     except Exception as e:
         return f"Groq API call failed: {str(e)}"
 
-
-
-# ---------------- STREAMLIT UI ----------------
 st.set_page_config(page_title="News vs Stock Analyzer", layout="wide")
 
 st.title("News vs Stock Price Analyzer")
 st.caption("Adaptive crawling • Free stack • Real-world safe")
 
 if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = []  # list of {"role": "...", "content": "..."}
+    st.session_state.chat_messages = []
 
 if "last_evaluation" not in st.session_state:
     st.session_state.last_evaluation = ""
@@ -225,11 +208,9 @@ ticker = st.text_input(
     placeholder="AAPL"
 )
 
-
 if st.button("Analyze") and ticker:
     ticker = ticker.strip().upper()
 
-    # ---- PRICE ----
     with st.spinner("Fetching live stock price..."):
         price = get_stock_price(ticker)
 
@@ -239,7 +220,6 @@ if st.button("Analyze") and ticker:
 
     st.success(f"Current Price: {price}")
 
-    # ---- SEARCH ----
     with st.spinner("Searching news sources..."):
         links = search_news(ticker)
 
@@ -251,7 +231,6 @@ if st.button("Analyze") and ticker:
     for l in links[:10]:
         st.markdown(f"- {l}")
 
-    # ---- ADAPTIVE CRAWLING ----
     st.subheader("Crawled Articles")
 
     successful_articles = []
@@ -279,7 +258,6 @@ if st.button("Analyze") and ticker:
 
     combined_text = "\n\n".join(successful_articles)
 
-    # ---- LLM ----
     if not GROQ_API_KEY:
         st.error("GROQ_API_KEY not set.")
         st.stop()
@@ -287,17 +265,17 @@ if st.button("Analyze") and ticker:
     st.subheader("AI Evaluation")
     with st.spinner("Analyzing news vs price..."):
         result = analyze_with_groq(combined_text, price, ticker)
-if st.session_state.chat_messages and st.session_state.last_ticker != ticker:
-    st.session_state.chat_messages = []
+
+    if st.session_state.last_ticker and st.session_state.last_ticker != ticker:
+        st.session_state.chat_messages = []
+
     st.session_state.last_evaluation = result
     st.session_state.last_ticker = ticker
     st.session_state.last_price = price
 
-
-
-    st.markdown("### AI Evaluation")
     st.markdown(result)
     st.divider()
+
 st.subheader("Chat about this stock (context-aware)")
 
 if not st.session_state.last_evaluation:
@@ -310,27 +288,26 @@ else:
     user_msg = st.chat_input("Ask a question about the stock (e.g., 'Bullish or bearish?' or 'What would make it go up?')")
 
     if user_msg:
-        st.session_state.chat_messages.append({"role": "user", "content": user_msg})
         with st.chat_message("user"):
             st.markdown(user_msg)
 
+        history_for_model = st.session_state.chat_messages[-20:]
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 assistant_reply = chat_with_groq(
                     ticker=st.session_state.last_ticker,
                     price=st.session_state.last_price,
                     evaluation_text=st.session_state.last_evaluation,
-                    chat_history=st.session_state.chat_messages,
+                    chat_history=history_for_model,
                     user_message=user_msg
                 )
                 st.markdown(assistant_reply)
 
+        st.session_state.chat_messages.append({"role": "user", "content": user_msg})
         st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
 
     st.caption("Not financial advice. This is an automated analysis based on recent scraped news and may be incomplete or wrong.")
 
-
-# ---------------- TOP STOCKS DASHBOARD ----------------
 st.subheader("Market Snapshot: Top Stocks")
 
 TOP_STOCKS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "NFLX", "AMD", "INTC"]
@@ -348,24 +325,18 @@ stock_data = load_stock_history(TOP_STOCKS)
 
 c1, c2 = st.columns(2)
 
-# Line chart – Price trends
 with c1:
     st.markdown("**1. Price Trends (6 months)**")
     st.line_chart({k: v["Close"] for k, v in stock_data.items()})
 
-# Area chart – Volume
 with c2:
     st.markdown("**2. Trading Volume (6 months)**")
     st.area_chart({k: v["Volume"] for k, v in stock_data.items()})
 
-# Bar chart – Latest Close
 st.markdown("**3. Latest Closing Prices**")
-latest_prices = {
-    k: float(v["Close"].iloc[-1]) for k, v in stock_data.items()
-}
+latest_prices = {k: float(v["Close"].iloc[-1]) for k, v in stock_data.items()}
 st.bar_chart(latest_prices)
 
-# Bar chart – % Change (7d)
 st.markdown("**4. 7-Day % Change**")
 pct_change = {
     k: round(((v["Close"].iloc[-1] / v["Close"].iloc[-7]) - 1) * 100, 2)
@@ -373,7 +344,6 @@ pct_change = {
 }
 st.bar_chart(pct_change)
 
-# Line chart – AAPL vs MSFT
 st.markdown("**5. AAPL vs MSFT Price Comparison**")
 compare_df = {
     "AAPL": stock_data["AAPL"]["Close"],
@@ -381,32 +351,22 @@ compare_df = {
 }
 st.line_chart(compare_df)
 
-# Area chart – NVDA momentum
 st.markdown("**6. NVDA Momentum (Close Price)**")
 st.area_chart(stock_data["NVDA"]["Close"])
 
-# Line chart – TSLA volatility
 st.markdown("**7. TSLA Volatility**")
 st.line_chart(stock_data["TSLA"]["High"] - stock_data["TSLA"]["Low"])
 
-# Bar chart – Average Volume
 st.markdown("**8. Average Daily Volume**")
-avg_volume = {
-    k: int(v["Volume"].mean()) for k, v in stock_data.items()
-}
+avg_volume = {k: int(v["Volume"].mean()) for k, v in stock_data.items()}
 st.bar_chart(avg_volume)
 
-# Line chart – META growth
 st.markdown("**9. META Growth Curve**")
 st.line_chart(stock_data["META"]["Close"])
 
-# Line chart – Semiconductor stocks
 st.markdown("**10. Semiconductor Performance (AMD vs INTC)**")
 semi_df = {
     "AMD": stock_data["AMD"]["Close"],
     "INTC": stock_data["INTC"]["Close"]
 }
-
 st.line_chart(semi_df)
-
-
