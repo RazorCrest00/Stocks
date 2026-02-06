@@ -124,13 +124,76 @@ Respond in plain text.
         )
 
         data = response.json()
-
-        # ---- HARD SAFETY CHECK ----
+        
         if "choices" not in data:
             return (
                 "Groq API did not return a valid completion.\n\n"
                 f"Response:\n{data}"
             )
+
+        return data["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        return f"Groq API call failed: {str(e)}"
+def chat_with_groq(ticker, price, evaluation_text, chat_history, user_message):
+    """
+    Chatbot that uses the Groq evaluation as context + maintains conversation.
+    chat_history: list of dicts like [{"role":"user","content":"..."}, {"role":"assistant","content":"..."}]
+    """
+    if not GROQ_API_KEY:
+        return "GROQ_API_KEY not set."
+
+    eval_context = (evaluation_text or "")[:2500]
+
+    system_prompt = f"""
+You are a stock research assistant inside a Streamlit app.
+
+You MUST use the provided evaluation context as your primary reference.
+You may discuss possible bullish/bearish scenarios and what would need to happen for price to rise/fall.
+You MUST NOT claim certainty or guarantee future price movements.
+If asked "will it go up", respond with a probability-style, scenario-based answer and key risks.
+
+Stock: {ticker}
+Current Price: {price}
+
+Evaluation Context (from earlier LLM analysis):
+{eval_context}
+
+Answer format rules:
+- Be concise.
+- Use plain text.
+- If you reference "up/down", clarify it is a hypothesis, not a guarantee.
+"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+
+    if chat_history:
+        messages.extend(chat_history[-20:])
+
+    messages.append({"role": "user", "content": user_message})
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": messages,
+        "temperature": 0.3
+    }
+
+    try:
+        response = requests.post(
+            GROQ_ENDPOINT,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        data = response.json()
+
+        if "choices" not in data:
+            return f"Groq API did not return a valid completion.\n\nResponse:\n{data}"
 
         return data["choices"][0]["message"]["content"]
 
@@ -144,6 +207,18 @@ st.set_page_config(page_title="News vs Stock Analyzer", layout="wide")
 
 st.title("News vs Stock Price Analyzer")
 st.caption("Adaptive crawling • Free stack • Real-world safe")
+
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []  # list of {"role": "...", "content": "..."}
+
+if "last_evaluation" not in st.session_state:
+    st.session_state.last_evaluation = ""
+
+if "last_ticker" not in st.session_state:
+    st.session_state.last_ticker = ""
+
+if "last_price" not in st.session_state:
+    st.session_state.last_price = None
 
 ticker = st.text_input(
     "Enter Stock Ticker (e.g. AAPL, TSLA, INFY)",
@@ -212,9 +287,47 @@ if st.button("Analyze") and ticker:
     st.subheader("AI Evaluation")
     with st.spinner("Analyzing news vs price..."):
         result = analyze_with_groq(combined_text, price, ticker)
+if st.session_state.chat_messages and st.session_state.last_ticker != ticker:
+    st.session_state.chat_messages = []
+    st.session_state.last_evaluation = result
+    st.session_state.last_ticker = ticker
+    st.session_state.last_price = price
+
+
 
     st.markdown("### AI Evaluation")
     st.markdown(result)
+    st.divider()
+st.subheader("Chat about this stock (context-aware)")
+
+if not st.session_state.last_evaluation:
+    st.info("Run Analyze first so the chatbot has context from the Groq evaluation.")
+else:
+    for m in st.session_state.chat_messages:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+    user_msg = st.chat_input("Ask a question about the stock (e.g., 'Bullish or bearish?' or 'What would make it go up?')")
+
+    if user_msg:
+        st.session_state.chat_messages.append({"role": "user", "content": user_msg})
+        with st.chat_message("user"):
+            st.markdown(user_msg)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                assistant_reply = chat_with_groq(
+                    ticker=st.session_state.last_ticker,
+                    price=st.session_state.last_price,
+                    evaluation_text=st.session_state.last_evaluation,
+                    chat_history=st.session_state.chat_messages,
+                    user_message=user_msg
+                )
+                st.markdown(assistant_reply)
+
+        st.session_state.chat_messages.append({"role": "assistant", "content": assistant_reply})
+
+    st.caption("Not financial advice. This is an automated analysis based on recent scraped news and may be incomplete or wrong.")
 
 
 # ---------------- TOP STOCKS DASHBOARD ----------------
@@ -295,4 +408,5 @@ semi_df = {
 }
 
 st.line_chart(semi_df)
+
 
