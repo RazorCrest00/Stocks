@@ -6,9 +6,11 @@ from ddgs import DDGS
 import os
 import time
 from urllib.parse import urlparse
-import html as _html
 
+# ---------------- CONFIG ----------------
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+
 GROQ_MODEL = "openai/gpt-oss-120b"
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -28,188 +30,268 @@ BLOCKED_DOMAINS = (
     "ft.com",
 )
 
+# ---------------- HELPERS ----------------
 def search_news(query, max_results=40):
     links = []
     with DDGS() as ddgs:
         for r in ddgs.news(query, max_results=max_results):
-            if r.get("url"):
-                links.append(r["url"])
-    return list(dict.fromkeys(links))
+            url = r.get("url")
+            if url and url not in links:
+                links.append(url)
+    return links
+
 
 def is_blocked_domain(url):
     domain = urlparse(url).netloc.lower()
     return any(bad in domain for bad in BLOCKED_DOMAINS)
 
+
 def crawl_article(url):
     try:
         if is_blocked_domain(url):
             return None
-        r = requests.get(url, headers=HEADERS, timeout=20)
-        if r.status_code != 200 or len(r.text) < 2000:
+
+        resp = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=20
+        )
+
+        if resp.status_code != 200 or len(resp.text) < 2000:
             return None
-        txt = trafilatura.extract(r.text, include_comments=False, include_tables=False)
-        return txt.strip() if txt and len(txt) > 300 else None
+
+        text = trafilatura.extract(
+            resp.text,
+            include_comments=False,
+            include_tables=False
+        )
+
+        if text and len(text.strip()) > 300:
+            return text.strip()
+
+        return None
+
     except Exception:
         return None
+
 
 def get_stock_price(ticker):
     try:
-        h = yf.Ticker(ticker).history(period="1d")
-        return round(float(h["Close"].iloc[-1]), 2) if not h.empty else None
+        stock = yf.Ticker(ticker)
+        data = stock.history(period="1d")
+        if data.empty:
+            return None
+        return round(float(data["Close"].iloc[-1]), 2)
     except Exception:
         return None
 
+
 def analyze_with_groq(news_text, price, ticker):
     prompt = f"""
+You are a financial analyst.
+
 Stock: {ticker}
 Current Price: {price}
 
-News:
+News Articles:
 {news_text[:3500]}
 
 Tasks:
-1. Sentiment
-2. Does news justify price?
-3. Actionable insight (3 lines max)
+1. Sentiment (Positive / Negative / Neutral)
+2. Does news justify the price?
+3. Actionable insight (max 3 lines)
+
+Respond in plain text.
 """
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
     payload = {
         "model": GROQ_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2
     }
-    r = requests.post(
-        GROQ_ENDPOINT,
-        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=30
-    )
-    return r.json()["choices"][0]["message"]["content"]
 
-def chat_with_groq(ticker, price, eval_text, history, user_msg):
-    system = f"""
-You are a stock assistant.
-Use evaluation context.
-Scenario based. No guarantees.
+    try:
+        response = requests.post(
+            GROQ_ENDPOINT,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
 
-Stock: {ticker}
-Price: {price}
+        data = response.json()
 
-Context:
-{eval_text[:2500]}
-"""
-    msgs = [{"role": "system", "content": system}] + history[-20:] + [{"role": "user", "content": user_msg}]
-    payload = {"model": GROQ_MODEL, "messages": msgs, "temperature": 0.3}
-    r = requests.post(
-        GROQ_ENDPOINT,
-        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=30
-    )
-    return r.json()["choices"][0]["message"]["content"]
+        # ---- HARD SAFETY CHECK ----
+        if "choices" not in data:
+            return (
+                "Groq API did not return a valid completion.\n\n"
+                f"Response:\n{data}"
+            )
 
-def bubbles(msgs):
-    out = []
-    for m in msgs:
-        c = _html.escape(m["content"]).replace("\n", "<br>")
-        cls = "bubble user" if m["role"] == "user" else "bubble bot"
-        out.append(f'<div class="{cls}">{c}</div>')
-    return "".join(out)
+        return data["choices"][0]["message"]["content"]
 
+    except Exception as e:
+        return f"Groq API call failed: {str(e)}"
+
+
+
+# ---------------- STREAMLIT UI ----------------
 st.set_page_config(page_title="News vs Stock Analyzer", layout="wide")
 
-for k, v in {
-    "chat_open": False,
-    "chat_msgs": [],
-    "chat_draft": "",
-    "last_eval": "",
-    "last_price": None,
-    "last_ticker": ""
-}.items():
-    st.session_state.setdefault(k, v)
-
-st.markdown("""
-<style>
-#chat_anchor{display:none}
-div:has(#chat_anchor){
- position:fixed;bottom:18px;right:18px;width:360px;z-index:99999;
-}
-.chat{
- border-radius:22px;overflow:hidden;
- box-shadow:0 20px 60px rgba(0,0,0,.6);
- background:rgba(14,14,18,.9)
-}
-.header{
- background:linear-gradient(90deg,#6D28D9,#5B21B6);
- color:white;padding:12px;display:flex;justify-content:space-between
-}
-.body{height:360px;overflow:auto;padding:12px}
-.bubble{max-width:85%;padding:10px 12px;border-radius:16px;margin:6px 0}
-.user{margin-left:auto;background:#6D28D933}
-.bot{margin-right:auto;background:#ffffff1a}
-.input{border-top:1px solid #ffffff22;padding:10px}
-</style>
-""", unsafe_allow_html=True)
-
 st.title("News vs Stock Price Analyzer")
+st.caption("Adaptive crawling • Free stack • Real-world safe")
 
-ticker = st.text_input("Ticker")
+ticker = st.text_input(
+    "Enter Stock Ticker (e.g. AAPL, TSLA, INFY)",
+    placeholder="AAPL"
+)
+
+
 if st.button("Analyze") and ticker:
-    ticker = ticker.upper()
-    price = get_stock_price(ticker)
-    links = search_news(ticker)
-    articles = [crawl_article(l) for l in links if crawl_article(l)]
-    result = analyze_with_groq("\n".join(articles[:5]), price, ticker)
-    st.session_state.last_eval = result
-    st.session_state.last_price = price
-    st.session_state.last_ticker = ticker
+    ticker = ticker.strip().upper()
+
+    # ---- PRICE ----
+    with st.spinner("Fetching live stock price..."):
+        price = get_stock_price(ticker)
+
+    if not price:
+        st.error("Could not fetch stock price. Check ticker.")
+        st.stop()
+
+    st.success(f"Current Price: {price}")
+
+    # ---- SEARCH ----
+    with st.spinner("Searching news sources..."):
+        links = search_news(ticker)
+
+    if not links:
+        st.error("No news links found.")
+        st.stop()
+
+    st.subheader("Discovered News Links")
+    for l in links[:10]:
+        st.markdown(f"- {l}")
+
+    # ---- ADAPTIVE CRAWLING ----
+    st.subheader("Crawled Articles")
+
+    successful_articles = []
+    attempted = 0
+
+    for link in links:
+        if len(successful_articles) >= 5:
+            break
+
+        attempted += 1
+        with st.spinner(f"Trying source {attempted}..."):
+            text = crawl_article(link)
+
+        if text:
+            successful_articles.append(text)
+            st.success(f"Source {attempted}: extracted ✔")
+        else:
+            st.warning(f"Source {attempted}: blocked / failed ")
+
+        time.sleep(0.8)
+
+    if not successful_articles:
+        st.error("Could not extract content from any source.")
+        st.stop()
+
+    combined_text = "\n\n".join(successful_articles)
+
+    # ---- LLM ----
+    if not GROQ_API_KEY:
+        st.error("GROQ_API_KEY not set.")
+        st.stop()
+
+    st.subheader("AI Evaluation")
+    with st.spinner("Analyzing news vs price..."):
+        result = analyze_with_groq(combined_text, price, ticker)
+
+    st.markdown("### AI Evaluation")
     st.markdown(result)
 
-st.subheader("Market Snapshot")
-stocks = ["AAPL","MSFT","GOOGL","AMZN","META","NVDA","TSLA","AMD","INTC"]
-data = {s: yf.Ticker(s).history(period="6mo") for s in stocks}
-c1,c2 = st.columns(2)
-with c1: st.line_chart({k:v["Close"] for k,v in data.items()})
-with c2: st.area_chart({k:v["Volume"] for k,v in data.items()})
 
-if st.session_state.last_eval:
-    with st.container():
-        st.markdown('<div id="chat_anchor"></div>', unsafe_allow_html=True)
+# ---------------- TOP STOCKS DASHBOARD ----------------
+st.subheader("Market Snapshot: Top Stocks")
 
-        if not st.session_state.chat_open:
-            st.markdown(f"""
-<div class="chat">
- <div class="header">
-  <b>Assistant</b>
-  <button onclick="window.location.reload()">Open</button>
- </div>
-</div>
-""", unsafe_allow_html=True)
-            if st.button("Open"):
-                st.session_state.chat_open = True
-                st.rerun()
-        else:
-            st.markdown(f"""
-<div class="chat">
- <div class="header">
-  <b>Assistant</b>
-  <button onclick="window.location.reload()">–</button>
- </div>
- <div class="body">{bubbles(st.session_state.chat_msgs)}</div>
-</div>
-""", unsafe_allow_html=True)
+TOP_STOCKS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "NFLX", "AMD", "INTC"]
 
-            st.markdown('<div class="input">', unsafe_allow_html=True)
-            msg = st.text_input(" ", key="chat_input")
-            if st.button("Send"):
-                st.session_state.chat_msgs.append({"role":"user","content":msg})
-                reply = chat_with_groq(
-                    st.session_state.last_ticker,
-                    st.session_state.last_price,
-                    st.session_state.last_eval,
-                    st.session_state.chat_msgs,
-                    msg
-                )
-                st.session_state.chat_msgs.append({"role":"assistant","content":reply})
-                st.session_state.chat_draft=""
-                st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
+@st.cache_data(ttl=900)
+def load_stock_history(tickers):
+    data = {}
+    for t in tickers:
+        hist = yf.Ticker(t).history(period="6mo")
+        if not hist.empty:
+            data[t] = hist
+    return data
+
+stock_data = load_stock_history(TOP_STOCKS)
+
+c1, c2 = st.columns(2)
+
+# Line chart – Price trends
+with c1:
+    st.markdown("**1. Price Trends (6 months)**")
+    st.line_chart({k: v["Close"] for k, v in stock_data.items()})
+
+# Area chart – Volume
+with c2:
+    st.markdown("**2. Trading Volume (6 months)**")
+    st.area_chart({k: v["Volume"] for k, v in stock_data.items()})
+
+# Bar chart – Latest Close
+st.markdown("**3. Latest Closing Prices**")
+latest_prices = {
+    k: float(v["Close"].iloc[-1]) for k, v in stock_data.items()
+}
+st.bar_chart(latest_prices)
+
+# Bar chart – % Change (7d)
+st.markdown("**4. 7-Day % Change**")
+pct_change = {
+    k: round(((v["Close"].iloc[-1] / v["Close"].iloc[-7]) - 1) * 100, 2)
+    for k, v in stock_data.items() if len(v) >= 7
+}
+st.bar_chart(pct_change)
+
+# Line chart – AAPL vs MSFT
+st.markdown("**5. AAPL vs MSFT Price Comparison**")
+compare_df = {
+    "AAPL": stock_data["AAPL"]["Close"],
+    "MSFT": stock_data["MSFT"]["Close"]
+}
+st.line_chart(compare_df)
+
+# Area chart – NVDA momentum
+st.markdown("**6. NVDA Momentum (Close Price)**")
+st.area_chart(stock_data["NVDA"]["Close"])
+
+# Line chart – TSLA volatility
+st.markdown("**7. TSLA Volatility**")
+st.line_chart(stock_data["TSLA"]["High"] - stock_data["TSLA"]["Low"])
+
+# Bar chart – Average Volume
+st.markdown("**8. Average Daily Volume**")
+avg_volume = {
+    k: int(v["Volume"].mean()) for k, v in stock_data.items()
+}
+st.bar_chart(avg_volume)
+
+# Line chart – META growth
+st.markdown("**9. META Growth Curve**")
+st.line_chart(stock_data["META"]["Close"])
+
+# Line chart – Semiconductor stocks
+st.markdown("**10. Semiconductor Performance (AMD vs INTC)**")
+semi_df = {
+    "AMD": stock_data["AMD"]["Close"],
+    "INTC": stock_data["INTC"]["Close"]
+}
+
+st.line_chart(semi_df)
